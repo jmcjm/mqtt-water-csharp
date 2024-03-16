@@ -1,12 +1,14 @@
 ﻿using MQTTnet.Client;
 using MQTTnet;
 using System.Text.Json;
+using System.Runtime.InteropServices;
 
 namespace water_mqtt 
 {
     internal class Program 
     {
         static Dictionary<string, float> midnightReadings = new Dictionary<string, float>();
+        static Dictionary<string, double> costReadings = new Dictionary<string, double>();
         static Dictionary<string, float> prices = new Dictionary<string, float>()
         {
             { "cold_water", 5.05f },
@@ -81,42 +83,65 @@ namespace water_mqtt
         static void CalculateDailyUsage(string name, float totalM3)
         {
             DateTime today = DateTime.Today;
+            if (today != DateTime.Today) {
+                midnightReadings.Clear(); 
+                costReadings.Clear();
+            }
 
             if (!midnightReadings.ContainsKey(name)) {
                 midnightReadings[name] = totalM3; // Store initial reading
-            } else {
-                float dailyUse = totalM3 - midnightReadings[name]; 
-                SendDailyUsage(name, dailyUse);
+                costReadings[name] = 0;
             }
-            if (today != DateTime.Today) {
-                midnightReadings.Clear(); 
-            }
+
+            float dailyUse = totalM3 - midnightReadings[name]; // Calculate use and cost even if it is the initial reading this day to reset info in HA
+            SendDailyUsage(name, dailyUse);
         }
         static void SendDailyUsage(string name, float dailyUse)
         {
+            string name_total_cost = "";
+            double total_ZL = 0;
             var usageData = new { 
+                media = "water",
                 name = name,
-                dailyUse = dailyUse,
-                cost = CalculateCost(name, dailyUse)
+                dailyUse = dailyUse
             };
-
-            string jsonData = JsonSerializer.Serialize(usageData);
-
-            Console.WriteLine(jsonData);
+            CalculateCost(name, dailyUse, false);
+            if (name=="Cold-water-bathroom" || name=="Hot-water-bathroom") 
+            {
+                name_total_cost = "total_bathroom_water_cost";
+                total_ZL = CalculateCost("-bathroom", 0, true);
+            } else {
+                name_total_cost = "total_kitchen_water_cost";
+                total_ZL = CalculateCost("-kitchen", 0, true);
+            }
+            var totalCostsData = new { 
+                media = "money",
+                name = name_total_cost,
+                total_ZL = total_ZL
+            };
+            string usageDataJson = JsonSerializer.Serialize(usageData);
+            string totalCostDataJason = JsonSerializer.Serialize(totalCostsData);
         }
 
-        static double CalculateCost(string name, float dailyUse)
+        static double CalculateCost(string name, float dailyUse, bool total)
         {
             double cost = 0;
-            switch (name) {
-                case "Cold-water-bathroom":
-                case "Cold-water-kitchem":
-                    cost = Math.Round(dailyUse * (prices["cold_water"]/1000) + dailyUse * (prices["sewage"]/1000),2);
-                    break;
-                case "Hot-water-bathroom":
-                case "Hot-water-kitchem":
-                    cost = Math.Round(dailyUse * (prices["hot_water"]/1000) + dailyUse * (prices["sewage"]/1000),2);
-                    break;
+            if (total) 
+            {
+                if (name=="Cold-water-bathroom" || name=="Hot-water-bathroom")
+                    cost = costReadings.Where(kvp => kvp.Key.EndsWith("-bathroom")).Sum(kvp => kvp.Value);
+                else if (name=="Cold-water-kitchen" || name=="Hot-water-kitchen")
+                    cost = costReadings.Where(kvp => kvp.Key.EndsWith("-kitchen")).Sum(kvp => kvp.Value);
+            } else {
+                switch (name) {
+                    case "Cold-water-bathroom": case "Cold-water-kitchem":
+                        cost = Math.Round(dailyUse * (prices["cold_water"]/1000) + dailyUse * (prices["sewage"]/1000),2);
+                        break;
+                    case "Hot-water-bathroon": case "Hot-water-kitchen":
+                        cost = Math.Round(dailyUse * (prices["hot_water"]/1000) + dailyUse * (prices["sewage"]/1000),2);
+                        break;
+                }
+                costReadings[name] = cost; // Saves the cost to dictionary for futher calculations
             }
             return cost;
         }
