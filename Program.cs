@@ -47,7 +47,7 @@ namespace water_mqtt
                         subscribeOptionsBuilder.WithTopicFilter(f => f.WithTopic("Cold-water-kitchen"));
                         subscribeOptionsBuilder.WithTopicFilter(f => f.WithTopic("Hot-water-bathroom"));
                         subscribeOptionsBuilder.WithTopicFilter(f => f.WithTopic("Hot-water-kitchen"));
-                        subscribeOptionsBuilder.WithTopicFilter(f => f.WithTopic("Hot-water-dupa"));
+                        subscribeOptionsBuilder.WithTopicFilter(f => f.WithTopic("test-water"));
 
                         await mqttClient.SubscribeAsync(subscribeOptionsBuilder.Build(), CancellationToken.None);
 
